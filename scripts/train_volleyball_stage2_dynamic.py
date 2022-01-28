@@ -5,7 +5,7 @@ from train_net_dynamic import *
 cfg=Config('volleyball')
 cfg.inference_module_name = 'dynamic_volleyball'
 
-cfg.device_list = "0,1"
+cfg.device_list = "0,1,2,3"
 cfg.use_gpu = True
 cfg.use_multi_gpu = True
 cfg.training_stage = 2

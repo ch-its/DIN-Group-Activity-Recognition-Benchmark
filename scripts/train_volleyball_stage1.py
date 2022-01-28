@@ -4,8 +4,8 @@ from train_net import *
 
 cfg=Config('volleyball')
 
-cfg.use_multi_gpu = False
-cfg.device_list="0"
+
+cfg.device_list="0,1,2,3"
 cfg.training_stage=1
 cfg.stage1_model_path=''
 cfg.train_backbone=True

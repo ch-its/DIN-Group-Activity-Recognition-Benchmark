@@ -120,7 +120,6 @@ class Dynamic_Person_Inference(nn.Module):
 
     def forward(self, person_features):
         '''
-
         :param person_features: shape [B, T, N, NFB]
         :return:
         '''
@@ -523,12 +522,3 @@ class FC(nn.Module):
         x = torch.einsum('abc,adc->adb',x,x)
 
         return x
-
-
-
-
-
-
-
-
-

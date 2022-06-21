@@ -5,7 +5,7 @@ from train_net_dynamic import *
 cfg=Config('volleyball')
 cfg.inference_module_name = 'dynamic_volleyball'
 
-cfg.device_list = "0,1,2,3"
+cfg.device_list = "0,1,2"
 cfg.use_gpu = True
 cfg.use_multi_gpu = True
 cfg.training_stage = 2
@@ -15,7 +15,7 @@ cfg.test_interval_epoch = 1
 
 # vgg16 setup
 cfg.backbone = 'vgg16'
-cfg.stage1_model_path = 'result/basemodel_VD_vgg16.pth'
+cfg.stage1_model_path = 'result/[Volleyball_stage1_stage1]<2022-06-18_19-19-17>/stage1_epoch27_92.79%.pth'
 cfg.out_size = 22, 40
 cfg.emb_features = 512
 

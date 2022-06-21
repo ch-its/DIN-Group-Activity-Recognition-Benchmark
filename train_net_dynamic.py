@@ -78,6 +78,7 @@ def train_net(cfg):
     elif cfg.training_stage==2:
         GCNnet = gcnnet_list[cfg.inference_module_name]
         model = GCNnet(cfg)
+        
         # Load backbone
         if cfg.load_backbone_stage2:
             model.loadmodel(cfg.stage1_model_path)
@@ -94,6 +95,7 @@ def train_net(cfg):
     
     if cfg.use_multi_gpu:
         model=nn.DataParallel(model)
+ 
 
     model=model.to(device=device)
     
@@ -133,7 +135,46 @@ def train_net(cfg):
                 best_result=test_info
             print_log(cfg.log_path, 
                       'Best group activity accuracy: %.2f%% at epoch #%d.'%(best_result['activities_acc'], best_result['epoch']))
+            acc_cnt =0
+            model.eval()
+            with torch.no_grad():
+                acc_cnt = 0
             
+                for batch_data_test in validation_loader:
+
+                    # prepare batch data
+                    
+                    batch_data_test=[b.to(device=device) for b in batch_data_test]
+                    batch_size=batch_data_test[0].shape[0]
+                    num_frames=batch_data_test[0].shape[1]
+
+                    actions_in=batch_data_test[2].reshape((batch_size,num_frames,cfg.num_boxes))
+                    activities_in=batch_data_test[3].reshape((batch_size,num_frames))
+
+                    # forward
+                    # actions_scores,activities_scores=model((batch_data_test[0],batch_data_test[1]))
+                    # activities_scores = model((batch_data_test[0], batch_data_test[1]))
+                    
+                    ret = model((batch_data_test[0], batch_data_test[1]))
+                    
+                    
+
+                    #print(ret['activities'])
+                    # Predict actions
+                    actions_in=actions_in[:,0,:].reshape((batch_size*cfg.num_boxes,))
+                    activities_in=activities_in[:,0].reshape((batch_size,))
+
+                    activities_scores = ret['activities']
+                    #print(activities_scores)
+                    activities_labels = torch.argmax(activities_scores,dim=1)
+
+                    activities_correct = torch.sum(torch.eq(activities_labels.int(),activities_in.int()).float())
+                    acc_cnt+=activities_correct
+                    activities_accuracy = activities_correct.item() / activities_scores.shape[0]
+
+
+
+                          
             # Save model
             if cfg.training_stage==2:
                 # None
@@ -145,6 +186,10 @@ def train_net(cfg):
                 }
                 filepath=cfg.result_path+'/stage%d_epoch%d_%.2f%%.pth'%(cfg.training_stage,epoch,test_info['activities_acc'])
                 torch.save(state, filepath)
+                
+                
+                
+                
                 print('model saved to:',filepath)
             elif cfg.training_stage==1:
                 if test_info['activities_acc'] == best_result['activities_acc']:
@@ -189,8 +234,12 @@ def train_volleyball(data_loader, model, device, optimizer, epoch, cfg):
         # Predict activities
         loss_list = []
         if 'activities' in list(ret.keys()):
+            
             activities_scores = ret['activities']
-            activities_loss = F.cross_entropy(activities_scores,activities_in)
+            count_s = [452,450,591,208,464,463,600,265]
+            weights = [(1-(i/sum(count_s))) for i in count_s]
+            class_weights = torch.FloatTensor(weights).cuda()
+            activities_loss = F.cross_entropy(activities_scores,activities_in,weight=class_weights)
             loss_list.append(activities_loss)
             activities_labels = torch.argmax(activities_scores,dim=1)
             activities_correct = torch.sum(torch.eq(activities_labels.int(),activities_in.int()).float())
@@ -199,10 +248,12 @@ def train_volleyball(data_loader, model, device, optimizer, epoch, cfg):
             activities_conf.add(activities_labels, activities_in)
 
         if 'actions' in list(ret.keys()):
+            
+            
             # Predict actions
             actions_scores = ret['actions']
             actions_weights = torch.tensor(cfg.actions_weights).to(device=device)
-            actions_loss = F.cross_entropy(actions_scores, actions_in, weight=actions_weights) * cfg.actions_loss_weight
+            actions_loss = F.cross_entropy(actions_scores, actions_in,weight=actions_weights) * cfg.actions_loss_weight
             loss_list.append(actions_loss)
             actions_labels = torch.argmax(actions_scores, dim=1)
             actions_correct = torch.sum(torch.eq(actions_labels.int(), actions_in.int()).float())
@@ -266,8 +317,11 @@ def test_volleyball(data_loader, model, device, epoch, cfg):
             # Predict activities
             loss_list = []
             if 'activities' in list(ret.keys()):
+                count_s = [192,173,210,87,168,179,226,102]
+                weights = [(1-(i/sum(count_s))) for i in count_s]
+                class_weights = torch.FloatTensor(weights).cuda()
                 activities_scores = ret['activities']
-                activities_loss = F.cross_entropy(activities_scores,activities_in)
+                activities_loss = F.cross_entropy(activities_scores,activities_in,weight=class_weights)
                 loss_list.append(activities_loss)
                 activities_labels = torch.argmax(activities_scores,dim=1)
                 # Save wrong samples
@@ -284,8 +338,11 @@ def test_volleyball(data_loader, model, device, epoch, cfg):
                 activities_conf.add(activities_labels, activities_in)
 
             if 'actions' in list(ret.keys()):
+                
+                
+                
                 actions_scores = ret['actions']
-                actions_weights=torch.tensor(cfg.actions_weights).to(device=device)
+                
                 actions_loss=F.cross_entropy(actions_scores,actions_in,weight=actions_weights)
                 loss_list.append(actions_loss)
                 actions_labels=torch.argmax(actions_scores,dim=1)
@@ -299,6 +356,19 @@ def test_volleyball(data_loader, model, device, epoch, cfg):
             # Total loss
             total_loss = sum(loss_list)
             loss_meter.update(total_loss.item(), batch_size)
+            
+            
+            #if not os.path.isdir('ann_vb_re'+str(4)):
+             #   os.makedirs('ann_vb_re'+str(4))
+
+            
+
+            #for i in range(len(activities_in)):
+
+               # f= open('ann_vb_re'+str(4)+"/"+"anns__"+str(4)+"epoch__"+str(epoch)+".txt","a+")
+               # f.write(str(activities_in[i].item())+","+str(activities_labels[i].item()))
+               # f.write("\n")
+                #f.close()
 
     test_info={
         'time':epoch_timer.timeit(),
@@ -329,7 +399,7 @@ def train_collective(data_loader, model, device, optimizer, epoch, cfg):
         num_frames=batch_data[0].shape[1]
 
         # forward
-        # actions_scores,activities_scores=model((batch_data[0],batch_data[1],batch_data[4]))
+        #actions_scores,activities_scores=model((batch_data[0],batch_data[1],batch_data[4]))
         activities_scores = model((batch_data[0], batch_data[1], batch_data[4]))
         activities_in = batch_data[3].reshape((batch_size,num_frames))
         bboxes_num = batch_data[4].reshape(batch_size,num_frames)
@@ -351,7 +421,9 @@ def train_collective(data_loader, model, device, optimizer, epoch, cfg):
         if cfg.training_stage==1:
             activities_in = activities_in.reshape(-1,)
         else:
-            activities_in = activities_in[:,0].reshape(batch_size,)
+            activities_in = activities_in[:,0].reshape((batch_size,))
+        #actions_in=actions_in[:,0,:].reshape((batch_size*cfg.num_boxes,))
+        
         
         # Predict actions
         # actions_loss=F.cross_entropy(actions_scores,actions_in,weight=None)
@@ -361,13 +433,19 @@ def train_collective(data_loader, model, device, optimizer, epoch, cfg):
         # actions_meter.update(actions_accuracy, actions_scores.shape[0])
 
         # Predict activities
-        activities_loss=F.cross_entropy(activities_scores,activities_in)
+        #print(activities_scores['activities'])
+        #print(activities_in)
+        activities_scores=activities_scores['activities']
+        count_s = [1110,451,502,448]
+        weights = [(1-(i/sum(count_s))) for i in count_s]
+        class_weights = torch.FloatTensor(weights).cuda()
+        activities_loss=F.cross_entropy(activities_scores,activities_in,weight=class_weights)
         activities_labels=torch.argmax(activities_scores,dim=1)  #B*T,
         activities_correct=torch.sum(torch.eq(activities_labels.int(),activities_in.int()).float())
         activities_accuracy=activities_correct.item()/activities_scores.shape[0]
         activities_meter.update(activities_accuracy, activities_scores.shape[0])
         activities_conf.add(activities_labels, activities_in)
-
+        
         # Total loss
         total_loss = activities_loss # + cfg.actions_loss_weight*actions_loss
         loss_meter.update(total_loss.item(), batch_size)
@@ -376,7 +454,7 @@ def train_collective(data_loader, model, device, optimizer, epoch, cfg):
         optimizer.zero_grad()
         total_loss.backward()
         optimizer.step()
-    
+        # Add tensor board plugin https://pytorch.org/docs/stable/tensorboard.html
     train_info={
         'time':epoch_timer.timeit(),
         'epoch':epoch,
@@ -441,7 +519,11 @@ def test_collective(data_loader, model, device, epoch, cfg):
             # actions_meter.update(actions_accuracy, actions_scores.shape[0])
 
             # Predict activities
-            activities_loss=F.cross_entropy(activities_scores,activities_in)
+            activities_scores=activities_scores['activities']
+            count_s = [1110,451,502,448]
+            weights = [(1-(i/sum(count_s))) for i in count_s]
+            class_weights = torch.FloatTensor(weights).cuda()
+            activities_loss=F.cross_entropy(activities_scores,activities_in,weight=class_weights)
             activities_labels=torch.argmax(activities_scores,dim=1)  #B,
             activities_correct=torch.sum(torch.eq(activities_labels.int(),activities_in.int()).float())
             activities_accuracy=activities_correct.item()/activities_scores.shape[0]
@@ -454,7 +536,8 @@ def test_collective(data_loader, model, device, epoch, cfg):
             # if flag == 764:
             #     np.savetxt('vis/Collective/wrong_samples.txt', wrong)
             # flag += 1
-
+            
+            
             # Total loss
             total_loss=activities_loss # + cfg.actions_loss_weight*actions_loss
             loss_meter.update(total_loss.item(), batch_size)

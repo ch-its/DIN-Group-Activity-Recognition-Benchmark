@@ -13,7 +13,7 @@ from dataset import *
 from gcn_model import *
 from base_model import *
 from utils import *
-
+from annotate import *
 
 def set_bn_eval(m):
     classname = m.__class__.__name__
@@ -97,6 +97,7 @@ def train_net(cfg):
     # Training iteration
     best_result={'epoch':0, 'activities_acc':0}
     start_epoch=1
+    
     for epoch in range(start_epoch, start_epoch+cfg.max_epoch):
         
         if epoch in cfg.lr_plan:
@@ -105,7 +106,8 @@ def train_net(cfg):
         # One epoch of forward and backward
         train_info=train(training_loader, model, device, optimizer, epoch, cfg)
         show_epoch_info('Train', cfg.log_path, train_info)
-
+        
+        
         # Test
         if epoch % cfg.test_interval_epoch == 0:
             test_info=test(validation_loader, model, device, epoch, cfg)
@@ -208,6 +210,11 @@ def test_volleyball(data_loader, model, device, epoch, cfg):
     loss_meter=AverageMeter()
     
     epoch_timer=Timer()
+    
+    
+    
+    
+    
     with torch.no_grad():
         for batch_data_test in data_loader:
             # prepare batch data
@@ -246,7 +253,13 @@ def test_volleyball(data_loader, model, device, epoch, cfg):
             # Total loss
             total_loss=activities_loss+cfg.actions_loss_weight*actions_loss
             loss_meter.update(total_loss.item(), batch_size)
+            
+            actio_in = actions_in
+            activ_in = activities_in
 
+            actio_lab = actions_labels
+            activ_lab = activities_labels
+            
     test_info={
         'time':epoch_timer.timeit(),
         'epoch':epoch,
@@ -254,6 +267,8 @@ def test_volleyball(data_loader, model, device, epoch, cfg):
         'activities_acc':activities_meter.avg*100,
         'actions_acc':actions_meter.avg*100
     }
+    
+    
     
     return test_info
 
@@ -344,6 +359,16 @@ def test_collective(data_loader, model, device, epoch, cfg):
     loss_meter=AverageMeter()
     
     epoch_timer=Timer()
+    
+    """
+    with torch.no_grad():
+        for batch_data in data_loader:
+            # prepare batch data
+            batch_data=[b.to(device=device) for b in batch_data]
+            print("batch_data",batch_data)
+    """
+    number_of_frames = 0
+     
     with torch.no_grad():
         for batch_data in data_loader:
             # prepare batch data
@@ -358,6 +383,13 @@ def test_collective(data_loader, model, device, epoch, cfg):
             # forward
             actions_scores,activities_scores=model((batch_data[0],batch_data[1],batch_data[4]))
             
+            """
+            print("batch_data[0]",batch_data[0].shape)
+            print("bata_data[1]",batch_data[1].shape)
+            print("batch_data[4]",batch_data[4].shape)
+            print("batch_size",batch_size)
+            print("num_frames",num_frames)
+            """
             actions_in_nopad=[]
             
             if cfg.training_stage==1:
@@ -372,10 +404,11 @@ def test_collective(data_loader, model, device, epoch, cfg):
                     actions_in_nopad.append(actions_in[b][0][:N])
             actions_in=torch.cat(actions_in_nopad,dim=0).reshape(-1,)  #ALL_N,
             
+            
             if cfg.training_stage==1:
                 activities_in=activities_in.reshape(-1,)
             else:
-                activities_in=activities_in[:,0].reshape(batch_size,)
+                activities_in=activities_in[:,0].reshape(batch_size,-1)
 
             actions_loss=F.cross_entropy(actions_scores,actions_in)  
             actions_labels=torch.argmax(actions_scores,dim=1)  #ALL_N,
@@ -385,6 +418,18 @@ def test_collective(data_loader, model, device, epoch, cfg):
             activities_loss=F.cross_entropy(activities_scores,activities_in)
             activities_labels=torch.argmax(activities_scores,dim=1)  #B,
             activities_correct=torch.sum(torch.eq(activities_labels.int(),activities_in.int()).float())
+            ###
+            #print("activity_labels",activities_labels)
+            #print("activity_in",activities_in)
+            
+            if epoch ==1:
+                for i in cfg.test_seqs:
+                    f= open("anns_0"+str(3)+".txt","a+")
+                    f.write(str(int(activities_in[0]))+","+str(int(activities_labels[0])))
+                    f.write("\n")
+                    f.close()
+            number_of_frames+=int(activities_labels.size()[0])
+            ###
             
             # Get accuracy
             actions_accuracy=actions_correct.item()/actions_scores.shape[0]
@@ -396,7 +441,16 @@ def test_collective(data_loader, model, device, epoch, cfg):
             # Total loss
             total_loss=activities_loss+cfg.actions_loss_weight*actions_loss
             loss_meter.update(total_loss.item(), batch_size)
+            
+           
+                
+                
+            
+            #dict_epoch[epoch].append([actions_in,actions_labels,activities_in,activities_labels])
+            
+            #dict_epoch[epoch] = [actions_in,actions_labels,activities_in,activities_labels]
 
+    
     test_info={
         'time':epoch_timer.timeit(),
         'epoch':epoch,
@@ -404,5 +458,19 @@ def test_collective(data_loader, model, device, epoch, cfg):
         'activities_acc':activities_meter.avg*100,
         'actions_acc':actions_meter.avg*100
     }
+    
+    #print("number_of_frames",number_of_frames)
+    
+   
+    
+    
+    
+    """
+    #print(actions_in,"actio_in")
+    #print(actions_labels,"actio_lab")
+    #print(activities_in,"activ_in")
+    #print(activities_labels,"activ_lab")
+    """
+    
     
     return test_info

@@ -121,8 +121,9 @@ class Dynamic_volleyball(nn.Module):
                     
     def loadmodel(self,filepath):
         state = torch.load(filepath)
-        self.backbone.load_state_dict(state['backbone_state_dict'])
-        self.fc_emb_1.load_state_dict(state['fc_emb_state_dict'])
+        #print(state.keys())
+        self.backbone.load_state_dict(state['backbone_state_dict'],strict=False)
+        self.fc_emb_1.load_state_dict(state['fc_emb_state_dict'],strict=False)
         print('Load model states from: ', filepath)
 
     def loadpart(self, pretrained_state_dict, model, prefix):
@@ -656,7 +657,7 @@ class HiGCIN_volleyball(nn.Module):
 
     def loadmodel(self, filepath):
         state = torch.load(filepath)
-        self.backbone.load_state_dict(state['backbone_state_dict'])
+        self.backbone.load_state_dict(state['backbone_state_dict'],strict=False)
         # self.fc_emb_1.load_state_dict(state['fc_emb_state_dict'])
         print('Load model states from: ', filepath)
 
@@ -1146,10 +1147,13 @@ class Dynamic_collective(nn.Module):
             self.backbone = MyInception_v3(transform_input=False, pretrained=True)
         elif cfg.backbone == 'vgg16':
             self.backbone = MyVGG16(pretrained=True)
+            
+            self.fc_emb_1 = nn.Linear(26400, NFB)
         elif cfg.backbone == 'vgg19':
             self.backbone = MyVGG19(pretrained=True)
         elif cfg.backbone == 'res18':
             self.backbone = MyRes18(pretrained=True)
+            #self.fc_emb_1 = nn.Linear(12800, NFB)
         else:
             assert False
         # self.backbone = MyInception_v3(transform_input=False, pretrained=True)
@@ -1159,7 +1163,8 @@ class Dynamic_collective(nn.Module):
                 p.requires_grad = False
 
         self.roi_align = RoIAlign(*self.cfg.crop_size)
-        self.fc_emb_1 = nn.Linear(K * K * D, NFB)
+        self.fbb = nn.Linear(12800,26400)
+        #self.fc_emb_1 = nn.Linear(K * K * D, NFB)
         self.nl_emb_1 = nn.LayerNorm([NFB])
 
         #self.gcn_list = torch.nn.ModuleList([GCN_Module(self.cfg) for i in range(self.cfg.gcn_layers)])
@@ -1219,11 +1224,12 @@ class Dynamic_collective(nn.Module):
 
     def loadmodel(self, filepath):
         state = torch.load(filepath)
-        self.backbone.load_state_dict(state['backbone_state_dict'])
-        self.fc_emb_1.load_state_dict(state['fc_emb_state_dict'])
+        self.backbone.load_state_dict(state['backbone_state_dict'],strict=False)
+        self.fc_emb_1.load_state_dict(state['fc_emb_state_dict'],strict=False)
         print('Load model states from: ', filepath)
 
     def forward(self, batch_data):
+        
         images_in, boxes_in, bboxes_num_in = batch_data
 
         # read config parameters
@@ -1243,6 +1249,7 @@ class Dynamic_collective(nn.Module):
         # Pre-precess first
         images_in_flat = prep_images(images_in_flat)
         outputs = self.backbone(images_in_flat)
+        
 
         # Build multiscale features
         features_multiscale = []
@@ -1256,7 +1263,7 @@ class Dynamic_collective(nn.Module):
         boxes_idx = [i * torch.ones(MAX_N, dtype=torch.int) for i in range(B * T)]
         boxes_idx = torch.stack(boxes_idx).to(device=boxes_in.device)  # B*T, MAX_N
         boxes_idx_flat = torch.reshape(boxes_idx, (B * T * MAX_N,))  # B*T*MAX_N,
-
+        
         # RoI Align
         boxes_in_flat.requires_grad = False
         boxes_idx_flat.requires_grad = False
@@ -1266,6 +1273,9 @@ class Dynamic_collective(nn.Module):
         boxes_features_all = boxes_features_all.reshape(B, T, MAX_N, -1)  # B*T,MAX_N, D*K*K
 
         # Embedding
+        
+        
+        boxes_features_all = self.fbb(boxes_features_all)
         boxes_features_all = self.fc_emb_1(boxes_features_all)  # B, T,MAX_N, NFB
         boxes_features_all = self.nl_emb_1(boxes_features_all)
         boxes_features_all = F.relu(boxes_features_all)
@@ -1284,17 +1294,21 @@ class Dynamic_collective(nn.Module):
 
         #actions_scores = []
         activities_scores = []
+        
+        
         bboxes_num_in = bboxes_num_in.reshape(B, T)  # B,T,
         for b in range(B):
             N = bboxes_num_in[b][0]
+            
             boxes_features = boxes_features_all[b, :, :N, :].reshape(1, T, N, -1)  # 1,T,N,NFB
             # boxes_positions = boxes_in[b, :, :N, :].reshape(T * N, 4)  # T*N, 4
 
             # Dynamic graph inference
-            graph_boxes_features = self.DPI(boxes_features)
+            graph_boxes_features,_ = self.DPI(boxes_features)
             torch.cuda.empty_cache()
 
             # cat graph_boxes_features with boxes_features
+            
             boxes_states = graph_boxes_features + boxes_features  # 1, T, N, NFG
             boxes_states = boxes_states.permute(0, 2, 1, 3).view(N, T, -1)
             boxes_states = self.dpi_nl(boxes_states)
@@ -1315,5 +1329,5 @@ class Dynamic_collective(nn.Module):
 
         # actions_scores = torch.cat(actions_scores, dim=0)  # ALL_N,actn_num
         activities_scores = torch.cat(activities_scores, dim=0)  # B,acty_num
-
+        print("activities_scores",activities_scores)
         return {'activities':activities_scores}# activities_scores # actions_scores,

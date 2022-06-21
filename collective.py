@@ -44,6 +44,8 @@ def collective_read_annotations(path,sid):
         actions=[]
         bboxes=[]
         for l in f.readlines():
+            
+            
             values=l[:-1].split('	')
             
             if int(values[0])!=frame_id:
@@ -89,6 +91,10 @@ def collective_read_dataset(path,seqs):
     return data
 
 def collective_all_frames(anns):
+    
+    
+    
+ 
     return [(s,f)  for s in anns for f in anns[s] ]
 
 
@@ -104,7 +110,7 @@ class CollectiveDataset(data.Dataset):
         self.feature_size=feature_size
         
         self.num_boxes = num_boxes
-        self.num_frames = num_frames
+        self.num_frames = 10
         
         self.is_training=is_training
         self.is_finetune=is_finetune
@@ -130,6 +136,7 @@ class CollectiveDataset(data.Dataset):
         # self.flag += 1
 
         select_frames=self.get_frames(self.frames[index])
+        #print("select_frames",select_frames)
         sample=self.load_samples_sequence(select_frames)
         
         return sample
@@ -221,7 +228,7 @@ class CollectiveDataset(data.Dataset):
         actions=torch.from_numpy(actions).long()
         activities=torch.from_numpy(activities).long()
         bboxes_num=torch.from_numpy(bboxes_num).int()
-        
+        print(activities)
         return images, bboxes,  actions, activities, bboxes_num
     
     

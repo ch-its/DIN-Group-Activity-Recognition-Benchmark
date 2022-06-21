@@ -164,7 +164,7 @@ class Basenet_collective(nn.Module):
         
         self.roi_align=RoIAlign(*self.cfg.crop_size)
         
-        self.fc_emb_1=nn.Linear(K*K*D,NFB)
+        self.fc_emb_1=nn.Linear(26400,NFB)
         self.dropout_emb_1 = nn.Dropout(p=self.cfg.train_dropout_prob)
 #         self.nl_emb_1=nn.LayerNorm([NFB])
         
@@ -244,6 +244,7 @@ class Basenet_collective(nn.Module):
                                             boxes_in_flat,
                                             boxes_idx_flat)  #B*T*MAX_N, D, K, K,
         
+        
         boxes_features_all=boxes_features_all.reshape(B*T,MAX_N,-1)  #B*T,MAX_N, D*K*K
         
         # Embedding 
@@ -277,9 +278,6 @@ class Basenet_collective(nn.Module):
 
         actions_scores=torch.cat(actions_scores,dim=0)  #ALL_N,actn_num
         activities_scores=torch.cat(activities_scores,dim=0)   #B*T,acty_num
-        
-#         print(actions_scores.shape)
-#         print(activities_scores.shape)
-       
+           
         return actions_scores, activities_scores
         

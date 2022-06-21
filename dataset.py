@@ -33,11 +33,14 @@ def return_dataset(cfg):
 
         training_set=CollectiveDataset(train_anns,train_frames,
                                       cfg.data_path,cfg.image_size,cfg.out_size,
-                                      num_frames = cfg.num_frames, is_training=True,is_finetune=(cfg.training_stage==1))
+                                      num_frames = 10, is_training=True,is_finetune=(cfg.training_stage==1))
 
         validation_set=CollectiveDataset(test_anns,test_frames,
                                       cfg.data_path,cfg.image_size,cfg.out_size,
-                                      num_frames = cfg.num_frames, is_training=False,is_finetune=(cfg.training_stage==1))
+                                      num_frames = 10, is_training=False,is_finetune=(cfg.training_stage==1))
+        
+        
+        
                               
     else:
         assert False
